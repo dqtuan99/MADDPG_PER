@@ -6,30 +6,23 @@ Created on Tue Dec 27 16:49:47 2022
 """
 
 
-import random
-import copy
 import numpy as np
 
-
-class OUNoise:
-    """Ornstein-Uhlenbeck process."""
-
-    def __init__(self, size, seed, mu=0.0, theta=0.13, sigma=0.2):
-        """Initialize parameters and noise process."""
-        self.mu = mu * np.ones(size)
+class OUActionNoise():
+    def __init__(self, mu, sigma=0.15, theta=0.2, dt=1e-3, x0=None):
         self.theta = theta
+        self.mu = mu
         self.sigma = sigma
-        self.seed = random.seed(seed)
-        self.size = size
+        self.dt = dt
+        self.x0 = x0
         self.reset()
 
-    def reset(self):
-        """Reset the internal state (= noise) to mean (mu)."""
-        self.state = copy.copy(self.mu)
+    def __call__(self):
+        x = self.x_prev + self.theta * (self.mu - self.x_prev) * self.dt + \
+                self.sigma * np.sqrt(self.dt) * np.random.normal(size=self.mu.shape)
+        self.x_prev = x
 
-    def sample(self):
-        """Update internal state and return it as a noise sample."""
-        x = self.state
-        dx = self.theta * (self.mu - x) + self.sigma * np.random.standard_normal(self.size)
-        self.state = x + dx
-        return self.state
+        return x
+
+    def reset(self):
+        self.x_prev = self.x0 if self.x0 is not None else np.zeros_like(self.mu)

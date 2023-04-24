@@ -6,6 +6,7 @@ Created on Thu Dec 15 20:58:08 2022
 """
 
 import numpy as np
+import torch
 
 
 memory_size = int(1e7) # maximum size of buffer memory
@@ -26,9 +27,13 @@ critic_lr = 1e-2 # learning rate of critic network
 hidden1_dim = 512
 hidden2_dim = 256
 
+batch_size = 32
+
 checkpoint_path = './checkpoints/MADDPG_PER/'
 
-n_uavs = 3
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+n_agents = n_uavs = 2
 n_antens = 20
 Nx = 4
 Ny = 5
@@ -47,6 +52,8 @@ noise = 1e-11
 power = 1e2
 frequency = 38e9
 c = 299792458
+
+dt = 0.1
 
 U_tip = 120 # tip spd of rotor blade (m/s), = Omega * R
 v_0 = 4.03 # mean rotor induced velocity in hover, = sqrt(W/2*rho*A)
