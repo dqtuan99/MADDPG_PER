@@ -3,7 +3,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import configs as cf
-from buffer import PrioritizedBuffer
+from buffer import ReplayBuffer
 from noise import OUActionNoise
 from networks import ActorNet, CriticNet
 
@@ -26,7 +26,7 @@ class MADDPG_Agents():
         
         self.batch_size = cf.batch_size
         
-        self.memory = PrioritizedBuffer(cf.memory_size)
+        self.memory = ReplayBuffer(cf.memory_size, cf.n_agents, obs_dim, action_dim)
         
         self.noise = OUActionNoise(np.zeros(action_dim))
         
@@ -69,22 +69,25 @@ class MADDPG_Agents():
         all_actor_loss = []
         all_critic_loss = []
         
-        (all_obs_batch, all_action_batch, all_reward_batch, all_next_obs_batch, all_done_batch),\
-        all_batch_idx, all_IS_weights = self.memory.sample(self.batch_size)
+        # (all_obs_batch, all_action_batch, all_reward_batch, all_next_obs_batch, all_done_batch),\
+        # all_batch_idx, all_IS_weights = self.memory.sample(self.batch_size)
+        
+        all_obs_batch, all_action_batch, all_reward_batch, \
+        all_next_obs_batch, all_done_batch = self.memory.sample_buffer(self.batch_size)
         
         all_obs_batch = torch.FloatTensor(all_obs_batch).to(cf.device)
         all_action_batch = torch.FloatTensor(all_action_batch).to(cf.device)
         all_reward_batch = torch.FloatTensor(all_reward_batch).to(cf.device)
-        all_reward_batch = torch.einsum('abc->acb', all_reward_batch)
+        # all_reward_batch = torch.einsum('abc->acb', all_reward_batch)
         all_next_obs_batch = torch.FloatTensor(all_next_obs_batch).to(cf.device)
         all_done_batch = torch.BoolTensor(all_done_batch).to(cf.device)
     
         joint_obs_batch = all_obs_batch.reshape((self.batch_size, -1))
         joint_action_batch = all_action_batch.reshape((self.batch_size, -1))
-        joint_next_obs_batch = all_next_obs_batch.reshape((self.batch_size, -1))
-        
+        joint_next_obs_batch = all_next_obs_batch.reshape((self.batch_size, -1))        
+                    
         for agent_idx in range(self.n_agents):
-            reward_batch = all_reward_batch[:, agent_idx, :]
+            reward_batch = all_reward_batch[:, agent_idx].unsqueeze(1)
             done_batch = all_done_batch[:, agent_idx].reshape((-1, 1))
             
             self.critics[agent_idx].optimizer.zero_grad()
@@ -98,7 +101,7 @@ class MADDPG_Agents():
             target_Q = self.target_critics[agent_idx](joint_next_obs_batch, joint_target_mu_batch)
             
             y = reward_batch + self.gamma * ~done_batch * target_Q
-                        
+                                    
             critic_loss = F.mse_loss(current_Q, y)
             critic_loss.backward()
             
@@ -120,10 +123,12 @@ class MADDPG_Agents():
             
             all_actor_loss.append(actor_loss)
             all_critic_loss.append(critic_loss)
+            
         
         for agent_idx in range(self.n_agents):
             soft_update(self.actors[agent_idx], self.target_actors[agent_idx])
             soft_update(self.critics[agent_idx], self.target_critics[agent_idx])
+        
                     
         return sum(all_actor_loss).item()/self.n_agents, sum(all_critic_loss).item()/self.n_agents
         

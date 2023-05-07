@@ -12,6 +12,7 @@ class SumTree:
 
     def _propagate(self, idx, change):
         parent = (idx - 1) // 2
+        print('parent=',parent)
 
         self.tree[parent] += change
 
@@ -47,6 +48,9 @@ class SumTree:
         change = p - self.tree[idx]
 
         self.tree[idx] = p
+        print('idx=',idx)
+        print('p=',p)
+        print('change=',change)
         self._propagate(idx, change)
 
     def get(self, s):

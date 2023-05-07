@@ -77,6 +77,8 @@ class Environment():
         self.uavs_pos[:, 2][np.where(self.uavs_pos[:, 2] < self.Hmin)] = self.Hmin
         self.uavs_pos[:, 2][np.where(self.uavs_pos[:, 2] > self.Hmax)] = self.Hmax
         
+        self.uavs_trajectory = np.hstack((self.uavs_trajectory, self.uavs_pos))
+        
         return self.uavs_pos
         
     
@@ -404,6 +406,8 @@ class Environment():
         self.users_pos = np.vstack((users_random_x, 
                                     users_random_y, 
                                     np.zeros(self.n_users))).T
+        
+        self.uavs_trajectory = self.uavs_pos
             
         self.d0 = self.get_d0()
         
@@ -474,12 +478,13 @@ class Environment():
         self.OOB_penalty = self.get_OOB_penalty(1)
         
         self.step_reward = self.sumrate + self.RDPE_reward - self.collision_penalty - self.OOB_penalty
+        self.other_rewards = (self.RDPE_reward, self.collision_penalty, self.OOB_penalty)
         # self.step_reward = self.step_reward.reshape((-1, 1))
         
         self.all_obs, self.all_obs_dict = self.collect_all_obs()
         
         # self.done = np.all(self.uavs_done == False)
         
-        return self.sumrate, self.step_reward, self.all_obs, self.uavs_done 
+        return self.sumrate, self.step_reward, self.all_obs, self.uavs_done, self.other_rewards
         
         
