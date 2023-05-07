@@ -133,8 +133,15 @@ for episode in range(n_episodes):
         plot_learning(actor_loss_hist, 'Episode', 'Actor Loss', 'Actor Loss per Episode')
         plot_learning(critic_loss_hist, 'Episode', 'Critic Loss', 'Critic Loss per Episode')
     
+    np.savetxt('logs/ep_reward.csv', ep_reward_hist, delimiter=',')
+    np.savetxt('logs/ep_sumrate.csv', ep_reward_hist, delimiter=',')
+    np.savetxt('logs/actor_loss.csv', actor_loss_hist, delimiter=',')
+    np.savetxt('logs/critic_loss.csv', critic_loss_hist, delimiter=',')
+    
     uavs_trajectory = ev.uavs_trajectory.reshape((cf.n_uavs, -1, 3))[:, 1:]
-    plot_uavs_trajectory(uavs_trajectory, ev.users_pos, 'UAVs trajectory of ep ' + str(episode))
+    plot_uavs_trajectory(uavs_trajectory, ev.users_pos, 'UAVs trajectory of ep ' + str(episode))    
+    
+    np.savetxt('logs/trajectory/trajectory_ep_' + str(episode) + '.csv', uavs_trajectory.flatten(), delimiter=',')
     
 # spd, azi, ele, analog_bf, digital_bf = process_action(a0)
 

@@ -9,7 +9,7 @@ import numpy as np
 import torch
 
 
-memory_size = int(1e5) # maximum size of buffer memory
+memory_size = int(1e6) # maximum size of buffer memory
 
 n_episodes = int(1e4) # number of simulation episodes
 n_steps = int(1e4) # number of steps per episode

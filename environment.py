@@ -15,7 +15,7 @@ def const_modulus(cmplx_num, const_value):
     return cmplx_num/n
 
 def cm_correction(matrix, const):
-    scale = lambda x: x / (np.abs(x) / const)
+    scale = lambda x: x / ((np.abs(x) + 1e-6) / const)
     scale = np.vectorize(scale)
     
     return scale(matrix)
