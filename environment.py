@@ -50,7 +50,7 @@ class Environment():
         # self.uavs_pos = np.zeros((self.n_uavs, 3))
         # self.users_pos = np.zeros((self.n_users, 3))
         # self.uavs_battery = np.array([self.Emax] * self.n_uavs)
-        self.ending_point = np.array([0, 0])
+        self.ending_point = np.array([self.Xmax, self.Ymax])
         
         self.obs_dim = 3 + 1 + 1 + 2*self.Nrf + \
             2*self.n_antens*self.Nrf + 2*self.Nrf*self.Nrf
@@ -73,6 +73,12 @@ class Environment():
         # self.uavs_pos[:, 0] += dx
         # self.uavs_pos[:, 1] += dy
         # self.uavs_pos[:, 2] += dz
+        
+        self.uavs_pos[:, 0][np.where(self.uavs_pos[:, 0] < self.Xmin)] = self.Xmin
+        self.uavs_pos[:, 0][np.where(self.uavs_pos[:, 0] > self.Xmax)] = self.Xmax
+        
+        self.uavs_pos[:, 1][np.where(self.uavs_pos[:, 1] < self.Ymin)] = self.Ymin
+        self.uavs_pos[:, 1][np.where(self.uavs_pos[:, 1] > self.Ymax)] = self.Ymax
         
         self.uavs_pos[:, 2][np.where(self.uavs_pos[:, 2] < self.Hmin)] = self.Hmin
         self.uavs_pos[:, 2][np.where(self.uavs_pos[:, 2] > self.Hmax)] = self.Hmax
@@ -369,21 +375,21 @@ class Environment():
         return collision_pen
     
     
-    def get_OOB_penalty(self, scale):
-        OOB_X = np.zeros(self.n_uavs)        
-        OOB_Y = np.zeros(self.n_uavs)
+    # def get_OOB_penalty(self, scale):
+    #     OOB_X = np.zeros(self.n_uavs)        
+    #     OOB_Y = np.zeros(self.n_uavs)
         
-        uavs_X = self.uavs_pos[:, 0]
-        uavs_Y = self.uavs_pos[:, 1]
+    #     uavs_X = self.uavs_pos[:, 0]
+    #     uavs_Y = self.uavs_pos[:, 1]
         
-        OOB_X[uavs_X < 0] = -uavs_X[uavs_X < 0]
-        OOB_Y[uavs_Y < 0] = -uavs_Y[uavs_Y < 0]
-        OOB_X[uavs_X > self.Xmax] = uavs_X[uavs_X > self.Xmax] - self.Xmax        
-        OOB_X[uavs_Y > self.Ymax] = uavs_Y[uavs_Y > self.Ymax] - self.Ymax
+    #     OOB_X[uavs_X < 0] = -uavs_X[uavs_X < 0]
+    #     OOB_Y[uavs_Y < 0] = -uavs_Y[uavs_Y < 0]
+    #     OOB_X[uavs_X > self.Xmax] = uavs_X[uavs_X > self.Xmax] - self.Xmax        
+    #     OOB_X[uavs_Y > self.Ymax] = uavs_Y[uavs_Y > self.Ymax] - self.Ymax
         
-        oob_dist = np.sqrt((OOB_X**2 + OOB_Y**2) / (self.Xmax**2 + self.Ymax**2))
+    #     oob_dist = np.sqrt((OOB_X**2 + OOB_Y**2) / (self.Xmax**2 + self.Ymax**2))
         
-        return scale * oob_dist
+    #     return scale * oob_dist
         
     
     def reset(self):
@@ -473,12 +479,15 @@ class Environment():
         self.rate = self.get_rate()
         
         self.sumrate = self.rate.sum()
-        self.RDPE_reward, self.RD , self.RE = self.get_RDPE_reward(1, 5, 5)
-        self.collision_penalty = self.get_collision_penalty(1, 5)
-        self.OOB_penalty = self.get_OOB_penalty(1)
+        self.RDPE_reward, self.RD , self.RE = self.get_RDPE_reward(5, 5, 5)
+        self.collision_penalty = self.get_collision_penalty(3, 5)
+        # self.OOB_penalty = self.get_OOB_penalty(1)
         
-        self.step_reward = self.sumrate + self.RDPE_reward - self.collision_penalty - self.OOB_penalty
-        self.other_rewards = (self.RDPE_reward, self.collision_penalty, self.OOB_penalty)
+        # self.step_reward = self.sumrate + self.RDPE_reward - self.collision_penalty - self.OOB_penalty
+        # self.other_rewards = (self.RDPE_reward, self.collision_penalty, self.OOB_penalty)
+        self.step_reward = self.sumrate + self.RDPE_reward - self.collision_penalty
+        self.other_rewards = (self.RDPE_reward, self.collision_penalty)
+        
         # self.step_reward = self.step_reward.reshape((-1, 1))
         
         self.all_obs, self.all_obs_dict = self.collect_all_obs()

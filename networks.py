@@ -18,7 +18,7 @@ class ActorNet(nn.Module):
         self.obs_dim = obs_dim
         self.action_dim = action_dim
         
-        self.checkpoint = os.path.join(cf.checkpoint_path, name)
+        self.checkpoint = os.path.join(cf.checkpoint_path, name + '.csv')
         
         self.policy = nn.Sequential(
             nn.Linear(obs_dim, cf.hidden1_dim),
@@ -63,7 +63,7 @@ class CriticNet(nn.Module):
         self.obs_dim = obs_dim
         self.action_dim = action_dim
         
-        self.checkpoint = os.path.join(cf.checkpoint_path, name)
+        self.checkpoint = os.path.join(cf.checkpoint_path, name + '.csv')
         
         self.obs_encoding = nn.Sequential(
             nn.Linear(self.n_agents * obs_dim, cf.hidden1_dim),

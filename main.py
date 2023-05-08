@@ -19,18 +19,18 @@ agents = MADDPG_Agents(obs_dim, action_dim)
 
 def plot_uavs_trajectory(uavs_trajectory, users_position, title):
     '''
-    black: start
-    green: end
     '''
     ax = plt.axes(projection='3d')
+    uavs_colors = ['red', 'green', 'blue']
+    uavs_start_markers = ['r', 'g', 'b']
     
     for m in range(uavs_trajectory.shape[0]):
         xline = uavs_trajectory[m].T[0]
         yline = uavs_trajectory[m].T[1]
         zline = uavs_trajectory[m].T[2]
-        ax.plot3D(xline, yline, zline, 'red')
-        ax.plot([uavs_trajectory[m,0,0]], [uavs_trajectory[m,0,1]], [uavs_trajectory[m,0,2]], markerfacecolor='g', markeredgecolor='k', marker='X', markersize=10, alpha=1)
-        ax.plot([uavs_trajectory[m,-1,0]], [uavs_trajectory[m,-1,1]], [uavs_trajectory[m,-1,2]], markerfacecolor='r', markeredgecolor='k', marker='X', markersize=10, alpha=1)
+        ax.plot3D(xline, yline, zline, uavs_colors[m])
+        ax.plot([uavs_trajectory[m,0,0]], [uavs_trajectory[m,0,1]], [uavs_trajectory[m,0,2]], markerfacecolor=uavs_start_markers[m], markeredgecolor='k', marker='o', markersize=10, alpha=1)
+        ax.plot([uavs_trajectory[m,-1,0]], [uavs_trajectory[m,-1,1]], [uavs_trajectory[m,-1,2]], markerfacecolor=uavs_start_markers[m], markeredgecolor='k', marker='X', markersize=10, alpha=1)
     
     
     for user in users_position:
@@ -74,8 +74,8 @@ def process_action(action):
     return spd, azi, ele, analog_bf, digital_bf
 
 
-n_episodes = 10000
-n_steps = 10000
+n_episodes = cf.n_episodes
+n_steps = cf.n_steps
 min_buffer = 50
 print_interval = 20
 
@@ -83,6 +83,8 @@ ep_sumrate_hist = []
 ep_reward_hist = []
 actor_loss_hist = []
 critic_loss_hist = []
+
+best_reward = -np.Inf
 
 for episode in range(n_episodes):
     obs = ev.reset()
@@ -110,8 +112,6 @@ for episode in range(n_episodes):
         if done.all() == True:
             break
         
-        # if step % 100 == 0:
-        #     print('uav battery:', ev.uavs_battery)
     
     ep_reward /= (step + 1)
     ep_reward_hist.append(ep_reward)
@@ -142,6 +142,11 @@ for episode in range(n_episodes):
     plot_uavs_trajectory(uavs_trajectory, ev.users_pos, 'UAVs trajectory of ep ' + str(episode))    
     
     np.savetxt('logs/trajectory/trajectory_ep_' + str(episode) + '.csv', uavs_trajectory.flatten(), delimiter=',')
+    
+    if ep_reward > best_reward:
+        best_reward = ep_reward
+        agents.save_models()
+        
     
 # spd, azi, ele, analog_bf, digital_bf = process_action(a0)
 

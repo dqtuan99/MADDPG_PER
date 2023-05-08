@@ -9,10 +9,10 @@ import numpy as np
 import torch
 
 
-memory_size = int(1e6) # maximum size of buffer memory
+memory_size = int(1e5) # maximum size of buffer memory
 
-n_episodes = int(1e4) # number of simulation episodes
-n_steps = int(1e4) # number of steps per episode
+n_episodes = int(3e3) # number of simulation episodes
+n_steps = int(3e3) # number of steps per episode
 
 epsilon = 1.
 epsilon_decay = 1e-4 # noise decay rate
@@ -38,7 +38,7 @@ n_antens = 20
 Nx = 4
 Ny = 5
 Nrf = 4
-Emax = 1e5
+Emax = 3e4
 Hrange = (100, 150)
 Vmax = 10
 r_buf = 50

@@ -52,7 +52,7 @@ class MADDPG_Agents():
         
         for agent_idx in range(self.n_agents):
             obs = torch.FloatTensor(all_obs[agent_idx]).to(cf.device)
-            action = self.actors[agent_idx](obs)
+            action = self.actors[agent_idx](obs).cpu()
             
             if is_training:
                 noise = torch.FloatTensor(self.noise())
@@ -132,6 +132,13 @@ class MADDPG_Agents():
                     
         return sum(all_actor_loss).item()/self.n_agents, sum(all_critic_loss).item()/self.n_agents
         
+    def save_models(self):
+        for agent_idx in range(self.n_agents):
+            self.actors[agent_idx].save_checkpoint()
+            self.critics[agent_idx].save_checkpoint()
+            self.target_actors[agent_idx].save_checkpoint()
+            self.target_critics[agent_idx].save_checkpoint()
+            
         # joint_mu = []
         # joint_target_mu_batch = []
         # for agent_idx in range(self.n_agents):            
