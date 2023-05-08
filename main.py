@@ -124,8 +124,14 @@ for episode in range(n_episodes):
     actor_loss_hist.append(actor_loss)
     critic_loss_hist.append(critic_loss)
     
-    print('ep', episode, '| ep_reward =', ep_reward, '| avg_reward_last_100_ep =', avg_reward_last_100_ep)
-    print('ep_sumrate =', ep_sumrate, '| avg_sumrate_last_100_ep =', avg_sumrate_last_100_ep)
+    print('=============================')
+    print('Episode', episode)
+    print('Reward =', ep_reward)
+    print('Sumrate =', ep_sumrate)
+    print('Other Rewards =', other_rewards)
+    print('Avg Reward =', avg_reward_last_100_ep)
+    print('Avg Sumrate =', avg_sumrate_last_100_ep)
+    print('=============================')
     
     if episode % print_interval == (print_interval - 1):
         plot_learning(ep_reward_hist, 'Episode', 'Avg Episode Reward', 'Reward per Episode')

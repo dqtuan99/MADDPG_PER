@@ -479,8 +479,8 @@ class Environment():
         self.rate = self.get_rate()
         
         self.sumrate = self.rate.sum()
-        self.RDPE_reward, self.RD , self.RE = self.get_RDPE_reward(5, 5, 5)
-        self.collision_penalty = self.get_collision_penalty(3, 5)
+        self.RDPE_reward, self.RD , self.RE = self.get_RDPE_reward(5, 3, 3)
+        self.collision_penalty = self.get_collision_penalty(3, 1)
         # self.OOB_penalty = self.get_OOB_penalty(1)
         
         # self.step_reward = self.sumrate + self.RDPE_reward - self.collision_penalty - self.OOB_penalty
