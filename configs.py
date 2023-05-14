@@ -31,7 +31,7 @@ batch_size = 32
 
 checkpoint_path = './checkpoints/MADDPG_PER/'
 
-device = torch.device('cpu')
+device = torch.device('cuda')
 
 n_agents = n_uavs = 2
 n_antens = 20
