@@ -15,6 +15,8 @@ class ActorNet(nn.Module):
         
         super(ActorNet, self).__init__()
         
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        
         self.obs_dim = obs_dim
         self.action_dim = action_dim
         
@@ -29,7 +31,7 @@ class ActorNet(nn.Module):
             nn.ReLU(),
             nn.Linear(cf.hidden2_dim, action_dim),
             nn.Sigmoid()
-            ).to(cf.device)
+            ).to(self.device)
         
         nn.init.kaiming_uniform_(self.policy[0].weight, nonlinearity='relu')
         nn.init.zeros_(self.policy[0].weight)
@@ -58,6 +60,8 @@ class CriticNet(nn.Module):
         
         super(CriticNet, self).__init__()
         
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        
         self.n_agents = cf.n_agents
         
         self.obs_dim = obs_dim
@@ -69,13 +73,13 @@ class CriticNet(nn.Module):
             nn.Linear(self.n_agents * obs_dim, cf.hidden1_dim),
             nn.LayerNorm(cf.hidden1_dim),
             nn.ReLU()
-            ).to(cf.device)
+            ).to(self.device)
                 
         self.actions_encoding = nn.Sequential(
             nn.Linear(self.n_agents * action_dim, cf.hidden1_dim),
             nn.LayerNorm(cf.hidden1_dim),
             nn.ReLU()
-            ).to(cf.device)
+            ).to(self.device)
         
         self.critic = nn.Sequential(
             nn.Linear(cf.hidden1_dim + cf.hidden1_dim, cf.hidden1_dim),
@@ -85,7 +89,7 @@ class CriticNet(nn.Module):
             nn.LayerNorm(cf.hidden2_dim),
             nn.ReLU(),
             nn.Linear(cf.hidden2_dim, 1)
-            ).to(cf.device)
+            ).to(self.device)
         
         nn.init.kaiming_uniform_(self.obs_encoding[0].weight, nonlinearity='relu')
         nn.init.zeros_(self.obs_encoding[0].bias)

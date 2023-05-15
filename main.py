@@ -7,12 +7,8 @@ from agent import MADDPG_Agents
 from tqdm import tqdm
 
 
-obs_dim = 3 + 1 + 1 + 1 + 2 * cf.Nrf
-action_dim = 1 + 1 + 1 + cf.n_antens * cf.Nrf * 2 + cf.Nrf * cf.Nrf * 2
-
-
 ev = Environment()
-agents = MADDPG_Agents(obs_dim, action_dim)
+agents = MADDPG_Agents(ev.obs_dim, ev.action_dim)
 
 # s0 = ev.reset()
 # a0 = agents.get_all_actions(s0)
@@ -54,24 +50,32 @@ def plot_learning(plot_reward, xlabel, ylabel, title):
     plt.title(title)
     plt.show()
 
-def process_action(action):
-    # spd = np.zeros(cf.n_uavs)
-    # azi = np.zeros(cf.n_uavs)
-    # ele = np.zeros(cf.n_uavs)
-    # analog_bf = np.zeros_like(ev.analog_bf)
-    # digital_bf = np.zero_like(ev.digital_bf)
+# def process_action(action):
+#     # spd = np.zeros(cf.n_uavs)
+#     # azi = np.zeros(cf.n_uavs)
+#     # ele = np.zeros(cf.n_uavs)
+#     # analog_bf = np.zeros_like(ev.analog_bf)
+#     # digital_bf = np.zero_like(ev.digital_bf)
     
+#     spd = action[:, 0] * cf.Vmax
+#     azi = action[:, 1] * 2 * np.pi
+#     ele = action[:, 2] * 2 * np.pi - np.pi
+    
+#     analog_bf = action[:, 3 : 3 + cf.n_antens * cf.Nrf * 2]
+#     analog_bf = (analog_bf[:, ::2] + analog_bf[:, 1::2] * 1j).reshape((cf.n_uavs, cf.n_antens, cf.Nrf))
+    
+#     digital_bf = action[:, 3 + cf.n_antens * cf.Nrf * 2 : ]
+#     digital_bf = (digital_bf[:, ::2] + digital_bf[:, 1::2] * 1j).reshape((cf.n_uavs, cf.Nrf, cf.Nrf))
+    
+#     return spd, azi, ele, analog_bf, digital_bf
+
+
+def process_action(action):
     spd = action[:, 0] * cf.Vmax
     azi = action[:, 1] * 2 * np.pi
     ele = action[:, 2] * 2 * np.pi - np.pi
     
-    analog_bf = action[:, 3 : 3 + cf.n_antens * cf.Nrf * 2]
-    analog_bf = (analog_bf[:, ::2] + analog_bf[:, 1::2] * 1j).reshape((cf.n_uavs, cf.n_antens, cf.Nrf))
-    
-    digital_bf = action[:, 3 + cf.n_antens * cf.Nrf * 2 : ]
-    digital_bf = (digital_bf[:, ::2] + digital_bf[:, 1::2] * 1j).reshape((cf.n_uavs, cf.Nrf, cf.Nrf))
-    
-    return spd, azi, ele, analog_bf, digital_bf
+    return spd, azi, ele
 
 
 n_episodes = cf.n_episodes
@@ -91,13 +95,24 @@ for episode in range(n_episodes):
     agents.noise.reset()
     agents.epsilon = cf.epsilon
     ep_reward = 0.
-    ep_sumrate = 0.
+    ep_sumrate = 0.    
     
-    for step in tqdm(range(n_steps), desc='Episode ' + str(episode) + ' progress bar: '):
-        action = agents.get_all_actions(obs)
-        spd, azi, ele, analog_bf, digital_bf = process_action(action)
+    for step in tqdm(range(n_steps * 2), desc='Episode ' + str(episode) + ': '):
+        rush_mode = ev.trigger_rush_mode()
+        rush_mode_azi = ev.get_rush_mode_azi()
         
-        sumrate, step_reward, next_obs, done, other_rewards = ev.step(spd, azi, ele, analog_bf, digital_bf)
+        action = agents.get_all_actions(obs)        
+        
+        for m in range(ev.n_uavs):
+            if rush_mode[m]:
+                action[m, 0] = 18/20
+                action[m, 1] = rush_mode_azi[m] / (2 * np.pi)
+                action[m, 2] = 0
+        
+        # spd, azi, ele, analog_bf, digital_bf = process_action(action)
+        spd, azi, ele = process_action(action)        
+        
+        sumrate, step_reward, next_obs, done, other_rewards = ev.step(spd, azi, ele)
         
         ep_reward += step_reward.mean()
         ep_sumrate += sumrate
@@ -107,10 +122,7 @@ for episode in range(n_episodes):
         if agents.memory.mem_ptr > min_buffer:
             actor_loss, critic_loss = agents.learn()
         
-        obs = next_obs        
-        
-        if done.all() == True:
-            break
+        obs = next_obs
         
     
     ep_reward /= (step + 1)
@@ -153,23 +165,5 @@ for episode in range(n_episodes):
         best_reward = ep_reward
         agents.save_models()
         
-    
-# spd, azi, ele, analog_bf, digital_bf = process_action(a0)
-
-# sumrate, step_reward, next_obs, done, other_rewards = ev.step(spd, azi, ele, analog_bf, digital_bf)
-
-# agents.memory.push(s0, a0, step_reward, next_obs, done)
-
-# (state_batch, action_batch, reward_batch, next_state_batch, done_batch),\
-# batch_dx, IS_weights = agents.memory.sample(5)
-
-# actor_loss, critic_loss = agents.learn()
-
-# print(actor_loss)
-# print(critic_loss)
-
-# state_batch, \
-# action_batch, \
-# reward_batch, \
-# next_state_batch, \
-# done_batch = agents.memory.sample(3)
+        
+        

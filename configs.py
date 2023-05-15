@@ -24,29 +24,27 @@ gamma = 0.99 # reward discount factor
 actor_lr = 1e-2 # learning rate of actor network
 critic_lr = 1e-2 # learning rate of critic network
 
-hidden1_dim = 512
-hidden2_dim = 256
+hidden1_dim = 256
+hidden2_dim = 128
 
 batch_size = 32
 
 checkpoint_path = './checkpoints/MADDPG_PER/'
 
-device = torch.device('cuda')
-
 n_agents = n_uavs = 2
-n_antens = 20
-Nx = 4
-Ny = 5
-Nrf = 4
-Emax = 3e4
+n_antens = 12
+Nx = 3
+Ny = 4
+Nrf = 3
+Emax = 5e5
 Hrange = (100, 150)
-Vmax = 10
+Vmax = 20
 r_buf = 50
 
-Xrange = (0, 200)
-Yrange = (0, 200)
+Xrange = (0, 500)
+Yrange = (0, 500)
 
-n_users = 15
+n_users = 20
 
 noise = 1e-11
 power = 1e2

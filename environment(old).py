@@ -1,8 +1,11 @@
 
+import random
 import numpy as np
+import torch
 import configs as cf
+from copy import deepcopy
 from sklearn.metrics.pairwise import euclidean_distances
-from sklearn.cluster import KMeans
+from ortools.linear_solver import pywraplp
 
 
 def const_modulus(cmplx_num, const_value):
@@ -43,33 +46,33 @@ class Environment():
         
         self.noise = cf.noise
         self.lambda_ = cf.c/cf.frequency
-        
+                
+        # self.uavs_pos = np.zeros((self.n_uavs, 3))
+        # self.users_pos = np.zeros((self.n_users, 3))
+        # self.uavs_battery = np.array([self.Emax] * self.n_uavs)
         self.ending_point = np.array([self.Xmax, self.Ymax])
         
-        self.obs_dim = 3 + 1 + 1 + 1 + 2 * self.Nrf
+        self.obs_dim = 3 + 1 + 1 + 2*self.Nrf + \
+            2*self.n_antens*self.Nrf + 2*self.Nrf*self.Nrf
             
-        self.action_dim = 1 + 1 + 1
+        self.action_dim = 1 + 1 + 1 + 2*self.n_antens*self.Nrf + 2*self.Nrf*self.Nrf
+        
+        self.solver = pywraplp.Solver.CreateSolver('SCIP')
         
         self.reset()
-        
-    
-    def check_uavs_done(self):        
-        for m in range(self.n_uavs):
-            if self.uavs_battery[m] < 0:
-                self.uavs_done[m] = True
-            elif self.d0[m] < 20:
-                self.uavs_done[m] = True
-        
-        return self.uavs_done
     
     
     def update_uavs_pos(self, V, azi, ele):
-        self.uavs_done = self.check_uavs_done()
+        self.uavs_done = self.uavs_battery < 0
         dx = V * np.cos(azi) * np.cos(ele) * self.dt * (1 - self.uavs_done)
         dy = V * np.sin(azi) * np.cos(ele) * self.dt * (1 - self.uavs_done)
         dz = V * np.sin(ele) * self.dt * (1 - self.uavs_done)
         
         self.uavs_pos += np.vstack((dx, dy, dz)).T
+        
+        # self.uavs_pos[:, 0] += dx
+        # self.uavs_pos[:, 1] += dy
+        # self.uavs_pos[:, 2] += dz
         
         self.uavs_pos[:, 0][np.where(self.uavs_pos[:, 0] < self.Xmin)] = self.Xmin
         self.uavs_pos[:, 0][np.where(self.uavs_pos[:, 0] > self.Xmax)] = self.Xmax
@@ -83,17 +86,12 @@ class Environment():
         self.uavs_trajectory = np.hstack((self.uavs_trajectory, self.uavs_pos))
         
         return self.uavs_pos
+        
     
-    
-    def cal_power_consumption(self, V):
+    def update_uavs_battery(self, V):        
         cost = cf.P_b * (1 + 3 * V**2/cf.U_tip**2) + \
                cf.P_i * np.sqrt( np.sqrt(1 + V**4/(4*cf.v_0**4)) - V**2/(2*cf.v_0**2) ) + \
                cf.d_0 * cf.rho * cf.s * cf.A * V**3/2
-               
-        return cost
-    
-    def update_uavs_battery(self, V):        
-        cost = self.cal_power_consumption(V)
         
         self.uavs_battery -= cost*self.dt
         
@@ -113,6 +111,13 @@ class Environment():
         dist = np.sum(dist, axis=1)/(self.n_uavs - 1)
         
         return dist
+    
+        
+    # def cm_correction(self, matrix, const):
+    #     scale = lambda x: x / (np.abs(x) / const)
+    #     scale = np.vectorize(scale)
+        
+    #     return scale(matrix)
     
     
     def power_correction(self):
@@ -171,34 +176,16 @@ class Environment():
         return np.arctan((Y - y)/(X - x))
     
     
-    def get_bf(self):
-        self.analog_bf = np.zeros((self.n_uavs, self.n_antens, self.Nrf), dtype=complex)
-        for m in range(self.n_uavs):
-            self.analog_bf[m] = self.steer_vec[m][self.association[m]].T
-            
-        self.analog_bf = cm_correction(self.analog_bf, 1/np.sqrt(self.n_antens))
-        
-        self.digital_bf = np.sqrt(self.power) * np.eye(self.Nrf)
-        self.digital_bf = np.tile(self.digital_bf, 
-                                  (self.n_uavs, 1)).reshape((-1, self.Nrf, self.Nrf))
-        for m in range(self.n_uavs):
-            self.digital_bf[m] /= np.linalg.norm(self.analog_bf[m])
-        
-        self.digital_bf = self.power_correction()
-        
-        return self.analog_bf, self.digital_bf
-    
-    
     def collect_all_obs(self):        
         all_obs = []        
         for m in range(self.n_uavs):
             uav_pos = self.uavs_pos[m].flatten()
             d0 = self.d0[m]
-            d_nearby_uavs = self.d_nearby_uavs[m]
+            d_nearby = self.d_nearby[m]
             battery = self.uavs_battery[m]
             served_users_pos = self.served_users_pos[m].flatten()
             
-            obs_m = np.hstack((uav_pos, d0, d_nearby_uavs, battery, served_users_pos))
+            obs_m = np.hstack((uav_pos, d0, d_nearby, battery, served_users_pos))
             all_obs.append(obs_m)
             
         all_obs = np.array(all_obs)
@@ -208,7 +195,7 @@ class Environment():
             obs_m_dict = {}
             obs_m_dict['pos'] = self.uavs_pos[m]
             obs_m_dict['d0'] = self.d0[m]
-            obs_m_dict['d_nearby_uavs'] = self.d_nearby_uavs[m]
+            obs_m_dict['d_nearby'] = self.d_nearby[m]
             obs_m_dict['battery'] = self.uavs_battery[m]
             obs_m_dict['served_users_pos'] = self.served_users_pos[m]
             
@@ -221,43 +208,74 @@ class Environment():
     
         
     def get_d0(self):        
-        return np.linalg.norm(self.uavs_pos[:,:2] - self.ending_point, axis=1)
+        return np.linalg.norm(self.uavs_pos[:, [0, 1]], axis=1)
     
     
-    def get_user_clusters(self):
-        users_2D_pos = self.users_pos[:, :2]
-        kmeans = KMeans(n_clusters=self.n_uavs, random_state=0).fit(users_2D_pos)
-        self.cluster_labels = kmeans.labels_
-        self.cluster_centers = kmeans.cluster_centers_
+    # def get_association(self):
         
-        return self.cluster_labels
+    def get_association_cost(self):
+        cost_p_LoS = 1 / self.p_LoS**2
+        cost_dist = self.uavs_users_dist
+        cost_fair = self.users_sumrate / self.users_sumrate.max()
+        
+        self.association_cost = cost_p_LoS * cost_dist * cost_fair
+        
+        return self.association_cost
     
     
     def get_association(self):
-        self.association = np.zeros((self.n_uavs, self.Nrf), dtype=int)
+        self.association_cost = self.get_association_cost()
+        # self.association_matrix = np.zeros((self.n_uavs, self.n_users))
+        self.association = np.zeros((self.n_uavs, self.Nrf), dtype=np.uint8)
+        x = {}
         for m in range(self.n_uavs):
-            cluster_users_idx = np.where(self.cluster_labels == m)[0]
-            cluster_users_pos = self.users_pos[cluster_users_idx]
-            dist = np.zeros_like(cluster_users_idx, dtype=np.float32)
+            for k in range(self.n_users):
+                x[m, k] = self.solver.IntVar(0, 1, '')
+
+        for m in range(self.n_uavs):
+            self.solver.Add(self.solver.Sum(
+                [x[m, k] for k in range(self.n_users)]) == self.Nrf)
+
+        for k in range(self.n_users):
+            self.solver.Add(self.solver.Sum(
+                [x[m, k] for m in range(self.n_uavs)]) <= 1)
             
-            for i, user_idx in enumerate(cluster_users_idx):
-                dist[i] = np.linalg.norm(self.uavs_pos[m] - cluster_users_pos[i])
-            
-            nearest_users_i = np.argpartition(dist, self.Nrf)[:self.Nrf]
-            nearest_users_idx = cluster_users_idx[nearest_users_i]
-            
-            self.association[m] = nearest_users_idx
+        objective_terms = []
+        for m in range(self.n_uavs):
+            for k in range(self.n_users):
+                objective_terms.append(self.association_cost[m][k] * x[m, k])
+        self.solver.Minimize(self.solver.Sum(objective_terms))
+
+        status = self.solver.Solve()
+        
+        if status == pywraplp.Solver.OPTIMAL or status == pywraplp.Solver.FEASIBLE:
+            for m in range(self.n_uavs):
+                i = 0
+                for k in range(self.n_users):
+                    if x[m, k].solution_value() > 0.5:
+                        self.association[m][i] = k
+                        i += 1
+        
+        else:            
+            self.association = np.array(random.sample(
+                range(self.n_users), self.n_uavs * self.Nrf)).reshape((self.n_uavs, -1))
         
         return self.association
         
     
-    def get_FSPL(self):        
+    def get_FSPL(self):
+        # uavs_pos = np.repeat(uavs_pos, self.Nrf).reshape((self.n_uavs, self.Nrf, -1))
+        # uavs_users_dist = np.linalg.norm(uavs_pos - served_users_pos, axis=2)
+        
         self.FSPL = 20 * np.log10(self.uavs_users_dist * cf.frequency) - 147.55
         
         return self.FSPL
     
     
     def get_p_LoS(self):
+        # uavs_H = np.repeat(uavs_pos[:, 2], self.Nrf).reshape((self.n_uavs, -1))
+        # uavs_pos = np.repeat(uavs_pos, self.Nrf).reshape((self.n_uavs, self.Nrf, -1))
+        # uavs_users_dist = np.linalg.norm(uavs_pos - served_users_pos, axis=2)
         uavs_H = self.uavs_pos[:, 2].repeat(self.n_users).reshape((self.n_uavs, -1))
         
         degree = np.arctan(uavs_H / self.uavs_users_dist) * 180 / np.pi
@@ -293,7 +311,18 @@ class Environment():
         return self.h
     
     
-    def get_SINR(self):        
+    def get_SINR(self):
+        # sinr = np.zeros((self.n_uavs, self.Nrf))        
+        # for m in range(self.n_uavs):
+        #     for i in range(self.Nrf):
+        #         h_mi = np.matrix(h[m][i].reshape((1, -1))).T.H
+        #         sinr_mi = h_mi.dot(analog_bf[m]).dot(digital_bf[m].T[i])
+        #         # ii = (m * self.Nrf) + i
+        #         sinr[m][i] = sinr_mi.abs()**2
+        
+        # intra_noise = deepcopy(sinr)
+        # intra_noise = intra_noise.sum(axis=1)[:, None] - intra_noise
+        
         self.intended_signal = np.zeros((self.n_uavs, self.Nrf))
         for m in range(self.n_uavs):
             for i in range(self.Nrf):
@@ -340,11 +369,28 @@ class Environment():
     
     
     def get_collision_penalty(self, scale, steep):
-        self.d_nearby_uavs = self.get_nearby_uav_dist()        
-        collision_pen = scale / np.exp(steep * self.d_nearby_uavs/self.r_buf)
+        self.d_nearby = self.get_nearby_uav_dist()        
+        collision_pen = scale / np.exp(steep * self.d_nearby/self.r_buf)
         
         return collision_pen
     
+    
+    # def get_OOB_penalty(self, scale):
+    #     OOB_X = np.zeros(self.n_uavs)        
+    #     OOB_Y = np.zeros(self.n_uavs)
+        
+    #     uavs_X = self.uavs_pos[:, 0]
+    #     uavs_Y = self.uavs_pos[:, 1]
+        
+    #     OOB_X[uavs_X < 0] = -uavs_X[uavs_X < 0]
+    #     OOB_Y[uavs_Y < 0] = -uavs_Y[uavs_Y < 0]
+    #     OOB_X[uavs_X > self.Xmax] = uavs_X[uavs_X > self.Xmax] - self.Xmax        
+    #     OOB_X[uavs_Y > self.Ymax] = uavs_Y[uavs_Y > self.Ymax] - self.Ymax
+        
+    #     oob_dist = np.sqrt((OOB_X**2 + OOB_Y**2) / (self.Xmax**2 + self.Ymax**2))
+        
+    #     return scale * oob_dist
+        
     
     def reset(self):
         self.users_sumrate = np.zeros(self.n_users) + 1e-5
@@ -371,7 +417,7 @@ class Environment():
             
         self.d0 = self.get_d0()
         
-        self.d_nearby_uavs = self.get_nearby_uav_dist()
+        self.d_nearby = self.get_nearby_uav_dist()
                         
         
         self.azi = self.get_azi()
@@ -380,13 +426,24 @@ class Environment():
         
         self.h = self.get_h()
         
-        self.cluster_labels = self.get_user_clusters()
-        
         self.association = self.get_association()  
         
         self.served_users_pos = self.users_pos[self.association][:,:,:2]
         
-        self.analog_bf, self.digital_bf = self.get_bf()
+        self.analog_bf = np.zeros((self.n_uavs, self.n_antens, self.Nrf), dtype=complex)
+        for m in range(self.n_uavs):
+            self.analog_bf[m] = self.steer_vec[m][self.association[m]].T
+            
+        self.analog_bf = cm_correction(self.analog_bf, 1/np.sqrt(self.n_antens))
+        
+        self.digital_bf = np.sqrt(self.power) * np.eye(self.Nrf)
+        self.digital_bf = np.tile(self.digital_bf, 
+                                  (self.n_uavs, 1)).reshape((-1, self.Nrf, self.Nrf))
+        for m in range(self.n_uavs):
+            self.digital_bf[m] /= np.linalg.norm(self.analog_bf[m])
+        
+        # self.digital_bf = self.digital_bf.astype(complex)
+        self.digital_bf = self.power_correction()
         
         self.all_obs, self.all_obs_dict = self.collect_all_obs()
                 
@@ -394,85 +451,15 @@ class Environment():
         
         self.current_step = 0
         
-        # self.reached_cluster_centers = [False] * self.n_uavs
-        
         return self.all_obs
-    
-    
-    # def get_dist_to_clusters(self):
-    #     self.dist_to_clusters = np.zeros(self.n_uavs)
-        
-    #     for m in range(self.n_uavs):
-    #         self.dist_to_clusters[m] = np.linalg.norm(self.uavs_pos[m, :2] - self.cluster_centers[m])
-    #         if self.dist_to_clusters[m] < self.Vmax * self.dt:
-    #             self.reached_cluster_centers[m] = True
-        
-    #     return self.dist_to_clusters
-    
-    
-    # def move_to_cluster_centers(self):
-    #     spd = np.zeros(self.n_uavs, dtype=np.float32)
-    #     azi = np.zeros(self.n_uavs, dtype=np.float32)
-    #     ele = np.zeros(self.n_uavs, dtype=np.float32)
-        
-    #     self.dist_to_clusters = self.get_dist_to_clusters()
-        
-    #     for m in range(self.n_uavs):
-    #         if (self.reached_cluster_centers[m]):
-    #             continue
-            
-    #         spd[m] = min(self.dist_to_clusters[m] / self.dt, self.Vmax)
-            
-    #         X = self.uavs_pos[m, 0]
-    #         Y = self.uavs_pos[m, 1]            
-    #         x = self.cluster_centers[m, 0]
-    #         y = self.cluster_centers[m, 1]            
-    #         azi[m] = np.arctan((Y - y)/(X - x))
-        
-    #     return spd, azi, ele
-    
-    
-    def required_step_to_reach_endpoint(self, V):        
-        reach_endpoint_time = self.d0 / V
-        reach_endpoint_step = np.ceil(reach_endpoint_time / self.dt)\
-            
-        return reach_endpoint_step
         
     
-    def required_energy_to_reach_endpoint(self, V):
-        power_consumption = self.cal_power_consumption(V)
-        reach_endpoint_step = self.required_step_to_reach_endpoint(V)
-        
-        return power_consumption * reach_endpoint_step
-    
-    
-    def trigger_rush_mode(self):
-        self.critical_level = self.required_energy_to_reach_endpoint(18)
-        self.rush_mode = self.uavs_battery + 1000 < self.critical_level
-        
-        return self.rush_mode
-    
-    
-    def get_rush_mode_azi(self):
-        azi = np.zeros(self.n_uavs, dtype=np.float32)
-        for m in range(self.n_uavs):
-            X = self.uavs_pos[m, 0]
-            Y = self.uavs_pos[m, 1]
-            x = self.ending_point[0]
-            y = self.ending_point[1]
-            azi[m] = np.arctan((Y - y) / (X - x))
-        
-        return azi
-        
-    
-    def step(self, spd, azi, ele):
+    def step(self, spd, azi, ele, analog_bf, digital_bf):
         self.current_step += 1
-        
-        self.uavs_pos, self.uavs_battery = self.uavs_move(spd, azi, ele)
         
         self.d0 = self.get_d0()
         
-        self.d_nearby_uavs = self.get_nearby_uav_dist()
+        self.d_nearby = self.get_nearby_uav_dist()
         
         self.azi = self.get_azi()
         self.ele = self.get_ele()
@@ -480,24 +467,32 @@ class Environment():
         
         self.h = self.get_h()
         
-        self.association = self.get_association()        
-        self.served_users_pos = self.users_pos[self.association][:,:,:2]
-            
-        self.analog_bf, self.digital_bf = self.get_bf()
-        self.analog_bf = cm_correction(self.analog_bf, 1/np.sqrt(self.n_antens))
+        if self.current_step % 50 == 0:
+            self.association = self.get_association()        
+            self.served_users_pos = self.users_pos[self.association][:,:,:2]
+        
+        self.analog_bf = cm_correction(analog_bf, 1/np.sqrt(self.n_antens))
         self.digital_bf = self.power_correction()
         
+        self.uavs_pos, self.uavs_battery = self.uavs_move(spd, azi, ele)
         self.sinr = self.get_SINR()
         self.rate = self.get_rate()
         
         self.sumrate = self.rate.sum()
-        self.RDPE_reward, self.RD , self.RE = self.get_RDPE_reward(5, 1, 1)
+        self.RDPE_reward, self.RD , self.RE = self.get_RDPE_reward(5, 3, 3)
         self.collision_penalty = self.get_collision_penalty(3, 1)
+        # self.OOB_penalty = self.get_OOB_penalty(1)
         
+        # self.step_reward = self.sumrate + self.RDPE_reward - self.collision_penalty - self.OOB_penalty
+        # self.other_rewards = (self.RDPE_reward, self.collision_penalty, self.OOB_penalty)
         self.step_reward = self.sumrate + self.RDPE_reward - self.collision_penalty
-        self.other_rewards = (self.RDPE_reward, self.collision_penalty)        
+        self.other_rewards = (self.RDPE_reward, self.collision_penalty)
+        
+        # self.step_reward = self.step_reward.reshape((-1, 1))
         
         self.all_obs, self.all_obs_dict = self.collect_all_obs()
+        
+        # self.done = np.all(self.uavs_done == False)
         
         return self.sumrate, self.step_reward, self.all_obs, self.uavs_done, self.other_rewards
         
