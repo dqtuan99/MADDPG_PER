@@ -9,10 +9,10 @@ import numpy as np
 import torch
 
 
-memory_size = int(1e5) # maximum size of buffer memory
+memory_size = int(5e5) # maximum size of buffer memory
 
 n_episodes = int(3e3) # number of simulation episodes
-n_steps = int(3e3) # number of steps per episode
+n_steps = int(1e3) # number of steps per episode
 
 epsilon = 1.
 epsilon_decay = 1e-4 # noise decay rate
@@ -21,30 +21,42 @@ polyak = 0.01 # target network soft update rate
 
 gamma = 0.99 # reward discount factor
 
-actor_lr = 1e-2 # learning rate of actor network
-critic_lr = 1e-2 # learning rate of critic network
+actor_lr = 1e-3 # learning rate of actor network
+critic_lr = 1e-3 # learning rate of critic network
 
 hidden1_dim = 256
 hidden2_dim = 128
 
-batch_size = 32
+batch_size = 64
 
 checkpoint_path = './checkpoints/MADDPG_PER/'
 
 n_agents = n_uavs = 2
+n_users = 20
+
 n_antens = 12
 Nx = 3
 Ny = 4
-Nrf = 3
-Emax = 5e5
-Hrange = (100, 150)
-Vmax = 20
-r_buf = 50
+Nrf = 4
+Emax = 5.5e4
+Hrange = (400.0, 800.0)
+Vmax = 35.0
+r_buf = Vmax * 2
 
-Xrange = (0, 500)
-Yrange = (0, 500)
 
-n_users = 20
+sumrate_weight = 1.5
+dest_reward_weight = 2.5
+step_penalty_weight = 1.5
+rd_steep = 1.0
+re_steep = 1.0
+collision_penalty_weight = 20.0
+collision_penalty_steep = 5.0
+OOB_penalty_weight = 10.0
+OOB_penalty_steep = 1.0
+
+
+Xrange = (0, 1000)
+Yrange = (0, 1000)
 
 noise = 1e-11
 power = 1e2
@@ -68,3 +80,4 @@ P_b = delta/8 * rho * s * A * Omega**3 * R**3
 P_i = (1 + k) * np.sqrt(W**3)/np.sqrt(2 * rho * A)
 
 C_1, C_2, zeta_LoS, zeta_NLoS = (9.61, 0.16, 1, 20)
+

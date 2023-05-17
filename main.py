@@ -10,15 +10,19 @@ from tqdm import tqdm
 ev = Environment()
 agents = MADDPG_Agents(ev.obs_dim, ev.action_dim)
 
-# s0 = ev.reset()
-# a0 = agents.get_all_actions(s0)
+n_episodes = cf.n_episodes
+n_steps = cf.n_steps
+min_buffer = 50
+print_interval = 1
+
+best_reward = -np.Inf
 
 def plot_uavs_trajectory(uavs_trajectory, users_position, title):
     '''
     '''
     ax = plt.axes(projection='3d')
-    uavs_colors = ['red', 'green', 'blue']
-    uavs_start_markers = ['r', 'g', 'b']
+    uavs_colors = ['blue', 'red', 'green']
+    uavs_start_markers = ['b', 'r', 'g']
     
     for m in range(uavs_trajectory.shape[0]):
         xline = uavs_trajectory[m].T[0]
@@ -33,13 +37,14 @@ def plot_uavs_trajectory(uavs_trajectory, users_position, title):
         ax.plot([user[0]], [user[1]], [user[2]], markerfacecolor='r', markeredgecolor='k', marker='o', markersize=8, alpha=0.6)
     
     # plot charging destination
-    edp = np.append(ev.ending_point, 0)
+    edp = np.append(ev.destination, 0)
     ax.plot([edp[0]], [edp[1]], [edp[2]], markerfacecolor='y', markeredgecolor='k', marker='o', markersize=15, alpha=0.6)
     
     plt.title(title)
     plt.xlabel('x-axis')
     plt.ylabel('y-axis')
     ax.set_zlabel('height')
+    plt.savefig('./figs/trajectories/' + title + '.png', dpi=144)
     plt.show()
 
 def plot_learning(plot_reward, xlabel, ylabel, title):
@@ -48,6 +53,7 @@ def plot_learning(plot_reward, xlabel, ylabel, title):
     plt.ylabel(ylabel)
     plt.plot(temp_plot)
     plt.title(title)
+    plt.savefig('./figs/results/' + title + '.png', dpi=144)
     plt.show()
 
 # def process_action(action):
@@ -74,92 +80,153 @@ def process_action(action):
     spd = action[:, 0] * cf.Vmax
     azi = action[:, 1] * 2 * np.pi
     ele = action[:, 2] * 2 * np.pi - np.pi
+    association = action[:, 3:]
+    association = np.argpartition(association, -ev.Nrf)[:, -ev.Nrf:]
     
-    return spd, azi, ele
+    return spd, azi, ele, association
 
 
-n_episodes = cf.n_episodes
-n_steps = cf.n_steps
-min_buffer = 50
-print_interval = 20
+ep_reward_hist = []
+ep_reward_hist2 = []
 
 ep_sumrate_hist = []
-ep_reward_hist = []
+ep_sumrate_hist2 = []
+
 actor_loss_hist = []
 critic_loss_hist = []
 
-best_reward = -np.Inf
+remaining_energy_hist = []
+d_destination_hist = []
+
+dest_reward_hist = []
+step_penalty_hist = []
+collision_penalty_hist = []
+OOB_penalty_hist = []
 
 for episode in range(n_episodes):
     obs = ev.reset()
     agents.noise.reset()
     agents.epsilon = cf.epsilon
-    ep_reward = 0.
-    ep_sumrate = 0.    
     
-    for step in tqdm(range(n_steps * 2), desc='Episode ' + str(episode) + ': '):
-        rush_mode = ev.trigger_rush_mode()
-        rush_mode_azi = ev.get_rush_mode_azi()
+    ep_reward = 0.0
+    ep_sumrate = 0.0
+    ep_dest_reward = 0.0
+    ep_step_penalty = 0.0
+    ep_collision_penalty = 0.0
+    ep_OOB_penalty = 0.0
+    
+    reward_list = []
+    sumrate_list = []
+    dest_reward_list = []
+    step_penalty_list = []
+    collision_penalty_list = []
+    OOB_penalty_list = []
+    
+    for step in tqdm(range(n_steps), desc='Episode ' + str(episode + 1) + ': '):
         
-        action = agents.get_all_actions(obs)        
-        
-        for m in range(ev.n_uavs):
-            if rush_mode[m]:
-                action[m, 0] = 18/20
-                action[m, 1] = rush_mode_azi[m] / (2 * np.pi)
-                action[m, 2] = 0
+        action = agents.get_all_actions(obs)
         
         # spd, azi, ele, analog_bf, digital_bf = process_action(action)
-        spd, azi, ele = process_action(action)        
+        spd, azi, ele, association = process_action(action)
         
-        sumrate, step_reward, next_obs, done, other_rewards = ev.step(spd, azi, ele)
+        sumrate, step_reward, next_obs, penalties = ev.step(spd, azi, ele, association)
         
-        ep_reward += step_reward.mean()
-        ep_sumrate += sumrate
+        dest_reward, step_penalty, collision_penalty, OOB_penalty = penalties
         
-        agents.memory.store_transition(obs, action, step_reward, next_obs, done)
+        ep_reward += step_reward.sum()
+        ep_sumrate += sumrate.sum()
+        ep_dest_reward += dest_reward.sum()
+        ep_step_penalty += step_penalty.sum()
+        ep_collision_penalty += collision_penalty.sum()
+        ep_OOB_penalty += OOB_penalty.sum()
+        
+        reward_list.append(step_reward)
+        sumrate_list.append(sumrate)
+        dest_reward_list.append(dest_reward)
+        step_penalty_list.append(step_penalty)
+        collision_penalty_list.append(collision_penalty)
+        OOB_penalty_list.append(OOB_penalty)
+        
+        agents.memory.store_transition(obs, action, step_reward, next_obs)
         
         if agents.memory.mem_ptr > min_buffer:
             actor_loss, critic_loss = agents.learn()
         
         obs = next_obs
         
-    
-    ep_reward /= (step + 1)
     ep_reward_hist.append(ep_reward)
     avg_reward_last_100_ep = np.mean(ep_reward_hist[-100:])
+    ep_reward_hist2.append(avg_reward_last_100_ep)
     
-    ep_sumrate /= (step + 1)
     ep_sumrate_hist.append(ep_sumrate)
     avg_sumrate_last_100_ep = np.mean(ep_sumrate_hist[-100:])
+    ep_sumrate_hist2.append(avg_sumrate_last_100_ep)
     
-    actor_loss_hist.append(actor_loss)
-    critic_loss_hist.append(critic_loss)
+    actor_loss_hist.append(np.array(actor_loss))
+    critic_loss_hist.append(np.array(critic_loss))
+    
+    remaining_energy_hist.append(ev.uavs_battery)
+    d_destination_hist.append(ev.d_destination)
+
+    dest_reward_hist.append(ep_dest_reward)
+    step_penalty_hist.append(ep_step_penalty)
+    collision_penalty_hist.append(ep_collision_penalty)
+    OOB_penalty_hist.append(ep_OOB_penalty)
     
     print('=============================')
-    print('Episode', episode)
-    print('Reward =', ep_reward)
-    print('Sumrate =', ep_sumrate)
-    print('Other Rewards =', other_rewards)
-    print('Avg Reward =', avg_reward_last_100_ep)
-    print('Avg Sumrate =', avg_sumrate_last_100_ep)
+    print('Episode', episode + 1)
+    print('Average remaining energy =', ev.uavs_battery.mean())
+    print('Average remaining distance to destination =', ev.d_destination.mean())
+    print('Ep Reward =', ep_reward)
+    print('Ep Sumrate =', ep_sumrate)
+    print('Ep Destination Encourage Rewards =', ep_dest_reward)
+    print('Ep Step Penalty =', ep_step_penalty)
+    print('Ep Collision Penalty =', ep_collision_penalty)
+    print('Ep OOB Penalty =', ep_OOB_penalty)
+    print('Avg Reward Last 100 Ep =', avg_reward_last_100_ep)
+    print('Avg Sumrate Last 100 Ep =', avg_sumrate_last_100_ep)
     print('=============================')
-    
-    if episode % print_interval == (print_interval - 1):
-        plot_learning(ep_reward_hist, 'Episode', 'Avg Episode Reward', 'Reward per Episode')
-        plot_learning(ep_sumrate_hist, 'Episode', 'Avg Sumrate', 'Reward per Episode')
-        plot_learning(actor_loss_hist, 'Episode', 'Actor Loss', 'Actor Loss per Episode')
-        plot_learning(critic_loss_hist, 'Episode', 'Critic Loss', 'Critic Loss per Episode')
     
     np.savetxt('logs/ep_reward.csv', ep_reward_hist, delimiter=',')
-    np.savetxt('logs/ep_sumrate.csv', ep_reward_hist, delimiter=',')
+    np.savetxt('logs/ep_reward2.csv', ep_reward_hist2, delimiter=',')
+    np.savetxt('logs/ep_sumrate.csv', ep_sumrate_hist, delimiter=',')
+    np.savetxt('logs/ep_sumrate2.csv', ep_sumrate_hist2, delimiter=',')
+    
     np.savetxt('logs/actor_loss.csv', actor_loss_hist, delimiter=',')
     np.savetxt('logs/critic_loss.csv', critic_loss_hist, delimiter=',')
     
+    np.savetxt('logs/remain_energy.csv', remaining_energy_hist, delimiter=',')
+    np.savetxt('logs/destination_distance.csv', d_destination_hist, delimiter=',')
+    
+    np.savetxt('logs/ep_dest_reward.csv', dest_reward_hist, delimiter=',')
+    np.savetxt('logs/ep_step_pen.csv', step_penalty_hist, delimiter=',')
+    np.savetxt('logs/ep_col_pen.csv', collision_penalty_hist, delimiter=',')
+    np.savetxt('logs/ep_oob_pen.csv', OOB_penalty_hist, delimiter=',')
+    
     uavs_trajectory = ev.uavs_trajectory.reshape((cf.n_uavs, -1, 3))[:, 1:]
-    plot_uavs_trajectory(uavs_trajectory, ev.users_pos, 'UAVs trajectory of ep ' + str(episode))    
+    # plot_uavs_trajectory(uavs_trajectory, ev.users_pos, 'UAVs trajectory of ep ' + str(episode))    
     
     np.savetxt('logs/trajectory/trajectory_ep_' + str(episode) + '.csv', uavs_trajectory.flatten(), delimiter=',')
+    
+    if episode % print_interval == (print_interval - 1):
+        plot_learning(ep_reward_hist, 'Episode', 'Reward', 'Reward per Episode')
+        plot_learning(ep_reward_hist2, 'Episode', 'Reward', 'Reward per Episode (2)')
+        
+        plot_learning(ep_sumrate_hist, 'Episode', 'Sumrate', 'Sumrate per Episode')
+        plot_learning(ep_sumrate_hist2, 'Episode', 'Sumrate', 'Sumrate per Episode (2)')
+        
+        plot_learning(actor_loss_hist, 'Episode', 'Actor Loss', 'Actor Loss per Episode')
+        plot_learning(critic_loss_hist, 'Episode', 'Critic Loss', 'Critic Loss per Episode')
+        
+                
+        plot_learning(reward_list, 'Step', 'Reward', 'Reward per Step of Ep ' + str(episode + 1))
+        plot_learning(sumrate_list, 'Step', 'Sumrate', 'Sumrate per Step of Ep ' + str(episode + 1))
+        plot_learning(dest_reward_list, 'Step', 'Reward', 'Destination Encourage Reward per Step of Ep ' + str(episode + 1))
+        plot_learning(step_penalty_list, 'Step', 'Penalty', 'Step penalty per Step of Ep ' + str(episode + 1))
+        plot_learning(collision_penalty_list, 'Step', 'Penalty', 'Collision penalty per Step of Ep ' + str(episode + 1))
+        plot_learning(OOB_penalty_list, 'Step', 'Penalty', 'OOB penalty per Step of Ep ' + str(episode + 1))
+        
+    plot_uavs_trajectory(uavs_trajectory, ev.users_pos, 'UAVs trajectory of ep ' + str(episode + 1)) 
     
     if ep_reward > best_reward:
         best_reward = ep_reward
